@@ -5,8 +5,8 @@ for almost everything.
 
 The plan for this project is to start with a prototype and improve over time.
 It's part of a series of game development experiments. Read more about that
-[http://bit.ly/1HtltaN](here). For following the progress, you might want to
-visit [http://bit.ly/1yvEpnE](the blog).
+[here](http://bit.ly/1HtltaN). For following the progress, you might want to
+visit [the blog](http://bit.ly/1yvEpnE).
 
 ## Building
 
@@ -15,8 +15,8 @@ In order to build Tankoid, you need:
 * A Unix-like operating system (sorry Windows peeps; support for your OS will
   come later)
 * Python 3.4
-* [http://www.sfml-dev.org/](SFML 2.2)
-* [https://github.com/bastienleonard/pysfml-cython](PySFML from GitHub),
+* [SFML 2.2](http://www.sfml-dev.org/)
+* [PySFML from GitHub](https://github.com/bastienleonard/pysfml-cython),
   installation covered in this readme.
 
 Clone Tankoid:
