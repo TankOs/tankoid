@@ -70,7 +70,11 @@ bricks = load_bricks(
 )
 
 shift = sf.Vector2(
-  window.size.x / 2 - LEVEL_SIZE.x / 2 * (BRICK_SIZE.x + BRICK_GAP_WIDTH),
+  (
+    window.size.x / 2 -
+    LEVEL_SIZE.x / 2 * (BRICK_SIZE.x + BRICK_GAP_WIDTH) +
+    BRICK_GAP_WIDTH / 2
+  ),
   50
 )
 
