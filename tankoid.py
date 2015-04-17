@@ -25,6 +25,65 @@ def normalized_vector(vector):
   length = math.sqrt(vector.x * vector.x + vector.y * vector.y)
   return sf.Vector2(vector.x / length, vector.y / length)
 
+def test_circle_rect_collision(circle_position, radius, rect, translation):
+  from shapely.geometry import LineString
+  from shapely.geometry.point import Point
+
+  from collections import namedtuple
+
+  Response = namedtuple("Response", ("position", "side"))
+
+  ball_line = LineString((
+      (circle_position.x, circle_position.y),
+      (circle_position.x + translation.x, circle_position.y + translation.y)
+  ))
+
+  collision = None
+
+  left_line = LineString(((rect.left, rect.top), (rect.left, rect.bottom)))
+  intersection = ball_line.intersection(left_line)
+
+  if type(intersection) is Point:
+    collision = Response(
+      position=sf.Vector2(intersection.x, intersection.y),
+      side="left",
+    )
+
+  if collision is None:
+    right_line = LineString(((rect.right, rect.top), (rect.right, rect.bottom)))
+    intersection = ball_line.intersection(right_line)
+
+    if type(intersection) is Point:
+      collision = Response(
+        position=sf.Vector2(intersection.x, intersection.y),
+        side="right",
+      )
+
+  if collision is None:
+    top_line = LineString(((rect.left, rect.top), (rect.right, rect.top)))
+    intersection = ball_line.intersection(top_line)
+
+    if type(intersection) is Point:
+      collision = Response(
+        position=sf.Vector2(intersection.x, intersection.y),
+        side="top",
+      )
+
+
+  if collision is None:
+    bottom_line = LineString((
+        (rect.left, rect.bottom), (rect.right, rect.bottom)
+    ))
+    intersection = ball_line.intersection(bottom_line)
+
+    if type(intersection) is Point:
+      collision = Response(
+        position=sf.Vector2(intersection.x, intersection.y),
+        side="bottom",
+      )
+
+  return collision
+
 def create_shadow(shape, distance=3):
   if type(shape) is sf.RectangleShape:
     shadow = sf.RectangleShape(shape.global_bounds.size)
@@ -115,6 +174,13 @@ ball.position = paddle.position - sf.Vector2(0, paddle.size.y)
 ball_velocity = sf.Vector2(0, 0)
 ball_attached_to_paddle = True
 
+# Create border collision shapes.
+left_border = sf.Rectangle((-500, -500), (500, 500 + window.size.y))
+right_border = sf.Rectangle((window.size.x, -500), (500, 500 + window.size.y))
+top_border = sf.Rectangle((-500, -500), (500 + window.size.x, 500))
+bottom_border = sf.Rectangle((-500, window.size.y), (500 + window.size.x, 500))
+borders = (left_border, right_border, top_border, bottom_border)
+
 frame_timer = sf.Clock()
 
 while run is True:
@@ -146,7 +212,30 @@ while run is True:
   if ball_attached_to_paddle is True:
     ball.position = paddle.position - sf.Vector2(0, paddle.size.y)
   else:
-    ball.position += ball_velocity * frametime.seconds
+    ball_translation = ball_velocity * frametime.seconds
+    new_ball_position = ball.position + ball_translation
+
+    # Collision test & response.
+    for border in borders:
+      collision = test_circle_rect_collision(
+        new_ball_position, BALL_RADIUS, border, ball_translation
+      )
+
+      if collision is not None:
+        new_ball_position = collision.position
+
+        if collision.side == "left":
+          ball_velocity = sf.Vector2(-abs(ball_velocity.x), ball_velocity.y)
+        elif collision.side == "bottom":
+          ball_velocity = sf.Vector2(ball_velocity.x, abs(ball_velocity.y))
+        elif collision.side == "right":
+          ball_velocity = sf.Vector2(abs(ball_velocity.x), ball_velocity.y)
+        elif collision.side == "top":
+          ball_velocity = sf.Vector2(ball_velocity.x, -abs(ball_velocity.y))
+
+        break # No more tests.
+
+    ball.position = new_ball_position
 
   window.clear(CLEAR_COLOR)
 
