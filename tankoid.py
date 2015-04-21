@@ -23,7 +23,7 @@ BALL_SPEED = 500.0
 
 def normalized_vector(vector):
   length = math.sqrt(vector.x * vector.x + vector.y * vector.y)
-  return sf.Vector2(vector.x / length, vector.y / length)
+  return vector / length
 
 def test_circle_rect_collision(circle_position, radius, rect, translation):
   from shapely.geometry import LineString
