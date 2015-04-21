@@ -21,66 +21,104 @@ BALL_RADIUS = 10.0
 BALL_COLOR = sf.Color.WHITE
 BALL_SPEED = 500.0
 
+def vector_length(vector):
+  return math.sqrt(vector.x * vector.x + vector.y * vector.y)
+
 def normalized_vector(vector):
-  length = math.sqrt(vector.x * vector.x + vector.y * vector.y)
-  return vector / length
+  return vector / vector_length(vector)
+
+def get_line_intersection(line0, line1):
+  """
+  line0 and line1 are tuples with 2 sf.Vector2 each.
+
+  Implemented this formula:
+  http://de.wikipedia.org/wiki/Schnittpunkt#Schnittpunkt_zweier_Geraden
+  """
+
+  x1, y1 = line0[0]
+  x2, y2 = line0[1]
+  x3, y3 = line1[0]
+  x4, y4 = line1[1]
+
+  return sf.Vector2(
+    (
+      ((x4 - x3) * (x2 * y1 - x1 * y2) - (x2 - x1) * (x4 * y3 - x3 * y4)) /
+      ((y4 - y3) * (x2 - x1) - (y2 - y1) * (x4 - x3))
+    ),
+    (
+      ((y1 - y2) * (x4 * y3 - x3 * y4) - (y3 - y4) * (x2 * y1 - x1 * y2)) /
+      ((y4 - y3) * (x2 - x1) - (y2 - y1) * (x4 - x3))
+    ),
+  )
 
 def test_circle_rect_collision(circle_position, radius, rect, translation):
-  from shapely.geometry import LineString
-  from shapely.geometry.point import Point
-
   from collections import namedtuple
-
-  Response = namedtuple("Response", ("position", "side"))
-
-  ball_line = LineString((
-      (circle_position.x, circle_position.y),
-      (circle_position.x + translation.x, circle_position.y + translation.y)
-  ))
 
   collision = None
 
-  left_line = LineString(((rect.left, rect.top), (rect.left, rect.bottom)))
-  intersection = ball_line.intersection(left_line)
+  # Test if circle's bounding box is intersecting with the target rect (broad
+  # phase)
+  bounding_box = sf.Rectangle(
+    circle_position - sf.Vector2(radius, radius),
+    sf.Vector2(2 * radius, 2 * radius),
+  )
 
-  if type(intersection) is Point:
-    collision = Response(
-      position=sf.Vector2(intersection.x, intersection.y),
-      side="left",
-    )
+  if bounding_box.intersects(rect) is not None:
+    Response = namedtuple("Response", ("position", "side"))
 
-  if collision is None:
-    right_line = LineString(((rect.right, rect.top), (rect.right, rect.bottom)))
-    intersection = ball_line.intersection(right_line)
+    translation_line = (circle_position, circle_position + translation)
 
-    if type(intersection) is Point:
-      collision = Response(
-        position=sf.Vector2(intersection.x, intersection.y),
-        side="right",
+    if translation.x > 0: # Left
+      rect_line = (
+        sf.Vector2(rect.left, rect.top),
+        sf.Vector2(rect.left, rect.bottom),
       )
+      intersection = get_line_intersection(translation_line, rect_line)
+      collision = Response(intersection, "left")
 
-  if collision is None:
-    top_line = LineString(((rect.left, rect.top), (rect.right, rect.top)))
-    intersection = ball_line.intersection(top_line)
-
-    if type(intersection) is Point:
-      collision = Response(
-        position=sf.Vector2(intersection.x, intersection.y),
-        side="top",
+    elif translation.x < 0: # Right
+      rect_line = (
+        sf.Vector2(rect.right, rect.top),
+        sf.Vector2(rect.right, rect.bottom),
       )
+      intersection = get_line_intersection(translation_line, rect_line)
+      collision = Response(intersection, "right")
 
-
-  if collision is None:
-    bottom_line = LineString((
-        (rect.left, rect.bottom), (rect.right, rect.bottom)
-    ))
-    intersection = ball_line.intersection(bottom_line)
-
-    if type(intersection) is Point:
-      collision = Response(
-        position=sf.Vector2(intersection.x, intersection.y),
-        side="bottom",
+    if translation.y > 0: # Top
+      rect_line = (
+        sf.Vector2(rect.left, rect.top),
+        sf.Vector2(rect.right, rect.top),
       )
+      intersection = get_line_intersection(translation_line, rect_line)
+      use = True
+
+      if collision is not None:
+        other_distance = vector_length(collision.position - circle_position)
+        my_distance = vector_length(intersection - circle_position)
+
+        if my_distance > other_distance:
+          use = False
+
+      if use is True:
+        collision = Response(intersection, "top")
+
+    elif translation.y < 0: # Bottom
+      rect_line = (
+        sf.Vector2(rect.left, rect.bottom),
+        sf.Vector2(rect.right, rect.bottom),
+      )
+      intersection = get_line_intersection(translation_line, rect_line)
+      use = True
+
+      if collision is not None:
+        other_distance = vector_length(collision.position - circle_position)
+        my_distance = vector_length(intersection - circle_position)
+
+        if my_distance > other_distance:
+          use = False
+
+      if use is True:
+        collision = Response(intersection, "bottom")
 
   return collision
 
@@ -222,7 +260,14 @@ while run is True:
       )
 
       if collision is not None:
-        new_ball_position = collision.position
+        translation_direction = normalized_vector(ball_translation)
+        max_distance = max(
+          abs(BALL_RADIUS / translation_direction.x),
+          abs(BALL_RADIUS / translation_direction.y),
+        )
+        new_ball_position = (
+          collision.position - translation_direction * max_distance
+        )
 
         if collision.side == "left":
           ball_velocity = sf.Vector2(-abs(ball_velocity.x), ball_velocity.y)
