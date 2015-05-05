@@ -126,7 +126,7 @@ run = True
 
 # Load fonts.
 gui_font = sf.Font.from_file(
-  "resources/fonts/orange_juice/orange juice 2.0.ttf"
+  "../resources/fonts/orange_juice/orange juice 2.0.ttf"
 )
 
 # Prepare texts.
@@ -142,7 +142,7 @@ you_win_text.color = sf.Color.WHITE
 
 # Load bricks and center them.
 bricks = load_bricks(
-  "resources/levels/0000.lvl", LEVEL_SIZE, BRICK_TYPES, BRICK_SIZE,
+  "../resources/levels/0000.lvl", LEVEL_SIZE, BRICK_TYPES, BRICK_SIZE,
   BRICK_GAP_WIDTH
 )
 
