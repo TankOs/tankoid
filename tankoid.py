@@ -20,7 +20,7 @@ CLEAR_COLOR = sf.Color(0, 128, 128)
 LEVEL_SIZE = sf.Vector2(10, 8)
 BALL_RADIUS = 10.0
 BALL_COLOR = sf.Color.WHITE
-BALL_SPEED = 600.0
+BALL_SPEED = 800.0
 FRAMERATE_LIMIT = 100
 
 Response = namedtuple("Response", ("position", "side"))
@@ -211,16 +211,24 @@ while run is True:
     new_ball_position = ball.position + ball_translation
     collisions = []
 
-    # Border collision test.
     ball_box = sf.Rectangle(
       (ball.position.x - BALL_RADIUS, ball.position.y - BALL_RADIUS),
       (2*BALL_RADIUS, 2 * BALL_RADIUS),
     )
 
+    # Paddle collision test.
+    collision = test_rect_rect_collision(
+      ball_box, paddle.global_bounds, ball_translation
+    )
+
+    if collision is not None:
+      collisions.append((collision, paddle))
+
+    # Border collision test.
     for border in borders:
       collision = test_rect_rect_collision(ball_box, border, ball_translation)
       if collision is not None:
-        collisions.append(collision)
+        collisions.append((collision, border))
 
     # Bricks collision test.
     for brick_idx, brick in enumerate(bricks):
@@ -228,31 +236,37 @@ while run is True:
         ball_box, brick.global_bounds, ball_translation
       )
       if collision is not None:
-        collisions.append(collision)
+        collisions.append((collision, brick))
 
     # Choose nearest collision.
     nearest_collision = None
     nearest_distance = None
 
-    for collision in collisions:
+    for collision, obj in collisions:
       distance = vector_length(collision.position - ball.position)
 
       if nearest_collision is None or distance < nearest_distance:
-        nearest_collision = collision
+        nearest_collision = (collision, obj)
         nearest_distance = distance
 
     # Collision response.
     if nearest_collision is not None:
+      collision, obj = nearest_collision
+
       # Set ball position to collision position.
-      new_ball_position = nearest_collision.position
+      new_ball_position = collision.position
 
       # Inverse velocity component.
-      if nearest_collision.side == "left" or nearest_collision.side == "right":
+      if collision.side == "left" or collision.side == "right":
         ball_velocity.x *= -1
       elif (
-        nearest_collision.side == "top" or nearest_collision.side == "bottom"
+        collision.side == "top" or collision.side == "bottom"
       ):
         ball_velocity.y *= -1
+
+      # Remove brick if applicable.
+      if obj in bricks:
+        bricks.remove(obj)
 
     ball.position = new_ball_position
 
