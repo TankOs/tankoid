@@ -2,6 +2,7 @@
 
 from sfml import sf
 
+from collections import namedtuple
 import math
 
 PADDLE_SIZE = sf.Vector2(140, 30)
@@ -19,7 +20,10 @@ CLEAR_COLOR = sf.Color(0, 128, 128)
 LEVEL_SIZE = sf.Vector2(10, 8)
 BALL_RADIUS = 10.0
 BALL_COLOR = sf.Color.WHITE
-BALL_SPEED = 500.0
+BALL_SPEED = 600.0
+FRAMERATE_LIMIT = 100
+
+Response = namedtuple("Response", ("position", "side"))
 
 def vector_length(vector):
   return math.sqrt(vector.x * vector.x + vector.y * vector.y)
@@ -27,98 +31,39 @@ def vector_length(vector):
 def normalized_vector(vector):
   return vector / vector_length(vector)
 
-def get_line_intersection(line0, line1):
-  """
-  line0 and line1 are tuples with 2 sf.Vector2 each.
-
-  Implemented this formula:
-  http://de.wikipedia.org/wiki/Schnittpunkt#Schnittpunkt_zweier_Geraden
-  """
-
-  x1, y1 = line0[0]
-  x2, y2 = line0[1]
-  x3, y3 = line1[0]
-  x4, y4 = line1[1]
-
-  return sf.Vector2(
-    (
-      ((x4 - x3) * (x2 * y1 - x1 * y2) - (x2 - x1) * (x4 * y3 - x3 * y4)) /
-      ((y4 - y3) * (x2 - x1) - (y2 - y1) * (x4 - x3))
-    ),
-    (
-      ((y1 - y2) * (x4 * y3 - x3 * y4) - (y3 - y4) * (x2 * y1 - x1 * y2)) /
-      ((y4 - y3) * (x2 - x1) - (y2 - y1) * (x4 - x3))
-    ),
-  )
-
-def test_circle_rect_collision(circle_position, radius, rect, translation):
-  from collections import namedtuple
-
+def test_rect_rect_collision(source_rect, target_rect, translation):
   collision = None
 
-  # Test if circle's bounding box is intersecting with the target rect (broad
-  # phase)
-  bounding_box = sf.Rectangle(
-    circle_position - sf.Vector2(radius, radius),
-    sf.Vector2(2 * radius, 2 * radius),
+  translated_rect = sf.Rectangle(
+    source_rect.position + translation, source_rect.size
   )
+  intersection = translated_rect.intersects(target_rect)
 
-  if bounding_box.intersects(rect) is not None:
-    Response = namedtuple("Response", ("position", "side"))
+  if intersection is not None:
+    norm_translation = normalized_vector(translation)
 
-    translation_line = (circle_position, circle_position + translation)
-
-    if translation.x > 0: # Left
-      rect_line = (
-        sf.Vector2(rect.left, rect.top),
-        sf.Vector2(rect.left, rect.bottom),
+    if intersection.width < intersection.height:
+      pullback_vector = sf.Vector2(
+        intersection.width * math.copysign(1, norm_translation.x),
+        intersection.width * norm_translation.y,
       )
-      intersection = get_line_intersection(translation_line, rect_line)
-      collision = Response(intersection, "left")
+      position = source_rect.center + (translation - pullback_vector)
 
-    elif translation.x < 0: # Right
-      rect_line = (
-        sf.Vector2(rect.right, rect.top),
-        sf.Vector2(rect.right, rect.bottom),
+      if translation.x < 0:
+        collision = Response(position, "right")
+      elif translation.x > 0:
+        collision = Response(position, "left")
+    else:
+      pullback_vector = sf.Vector2(
+        intersection.height * norm_translation.x,
+        intersection.height * math.copysign(1, norm_translation.y),
       )
-      intersection = get_line_intersection(translation_line, rect_line)
-      collision = Response(intersection, "right")
+      position = source_rect.center + (translation - pullback_vector)
 
-    if translation.y > 0: # Top
-      rect_line = (
-        sf.Vector2(rect.left, rect.top),
-        sf.Vector2(rect.right, rect.top),
-      )
-      intersection = get_line_intersection(translation_line, rect_line)
-      use = True
-
-      if collision is not None:
-        other_distance = vector_length(collision.position - circle_position)
-        my_distance = vector_length(intersection - circle_position)
-
-        if my_distance > other_distance:
-          use = False
-
-      if use is True:
-        collision = Response(intersection, "top")
-
-    elif translation.y < 0: # Bottom
-      rect_line = (
-        sf.Vector2(rect.left, rect.bottom),
-        sf.Vector2(rect.right, rect.bottom),
-      )
-      intersection = get_line_intersection(translation_line, rect_line)
-      use = True
-
-      if collision is not None:
-        other_distance = vector_length(collision.position - circle_position)
-        my_distance = vector_length(intersection - circle_position)
-
-        if my_distance > other_distance:
-          use = False
-
-      if use is True:
-        collision = Response(intersection, "bottom")
+      if translation.y < 0:
+        collision = Response(position, "bottom")
+      elif translation.y > 0:
+        collision = Response(position, "top")
 
   return collision
 
@@ -163,6 +108,8 @@ def load_bricks(path, size, brick_type_pool, brick_size, gap_width,):
         raise RuntimeError("Brick type not in pool: " + brick_type)
 
       brick = sf.RectangleShape(brick_size)
+      brick.outline_thickness = 1
+      brick.outline_color = sf.Color(0, 0, 0, 70)
       brick.fill_color = brick_type_pool[int_brick_type]
       brick.origin = brick.size / 2
       brick.position = sf.Vector2(
@@ -174,6 +121,7 @@ def load_bricks(path, size, brick_type_pool, brick_size, gap_width,):
   return bricks
 
 window = sf.RenderWindow(sf.VideoMode(1024, 768), "Tankoid (Python)", 0)
+window.framerate_limit = FRAMERATE_LIMIT
 run = True
 
 # Load bricks and center them.
@@ -213,13 +161,16 @@ ball_velocity = sf.Vector2(0, 0)
 ball_attached_to_paddle = True
 
 # Create border collision shapes.
-left_border = sf.Rectangle((-500, -500), (500, 500 + window.size.y))
-right_border = sf.Rectangle((window.size.x, -500), (500, 500 + window.size.y))
-top_border = sf.Rectangle((-500, -500), (500 + window.size.x, 500))
-bottom_border = sf.Rectangle((-500, window.size.y), (500 + window.size.x, 500))
+left_border = sf.Rectangle((-500, -500), (500, 1000 + window.size.y))
+right_border = sf.Rectangle((window.size.x, -500), (500, 1000 + window.size.y))
+top_border = sf.Rectangle((-500, -500), (1000 + window.size.x, 500))
+bottom_border = sf.Rectangle(
+  (-500, window.size.y), (1000 + window.size.x, 500)
+)
 borders = (left_border, right_border, top_border, bottom_border)
 
 frame_timer = sf.Clock()
+app_timer = sf.Clock()
 
 while run is True:
   for event in window.events:
@@ -231,6 +182,12 @@ while run is True:
         if ball_attached_to_paddle is True:
           ball_attached_to_paddle = False
           ball_velocity = normalized_vector(sf.Vector2(1, -1)) * BALL_SPEED
+
+      elif event.code == sf.Keyboard.NUM2:
+        ball_velocity *= 2
+
+      elif event.code == sf.Keyboard.NUM1:
+        ball_velocity /= 2;
 
   frametime = frame_timer.restart()
 
@@ -252,33 +209,50 @@ while run is True:
   else:
     ball_translation = ball_velocity * frametime.seconds
     new_ball_position = ball.position + ball_translation
+    collisions = []
 
-    # Collision test & response.
+    # Border collision test.
+    ball_box = sf.Rectangle(
+      (ball.position.x - BALL_RADIUS, ball.position.y - BALL_RADIUS),
+      (2*BALL_RADIUS, 2 * BALL_RADIUS),
+    )
+
     for border in borders:
-      collision = test_circle_rect_collision(
-        new_ball_position, BALL_RADIUS, border, ball_translation
-      )
-
+      collision = test_rect_rect_collision(ball_box, border, ball_translation)
       if collision is not None:
-        translation_direction = normalized_vector(ball_translation)
-        max_distance = max(
-          abs(BALL_RADIUS / translation_direction.x),
-          abs(BALL_RADIUS / translation_direction.y),
-        )
-        new_ball_position = (
-          collision.position - translation_direction * max_distance
-        )
+        collisions.append(collision)
 
-        if collision.side == "left":
-          ball_velocity = sf.Vector2(-abs(ball_velocity.x), ball_velocity.y)
-        elif collision.side == "bottom":
-          ball_velocity = sf.Vector2(ball_velocity.x, abs(ball_velocity.y))
-        elif collision.side == "right":
-          ball_velocity = sf.Vector2(abs(ball_velocity.x), ball_velocity.y)
-        elif collision.side == "top":
-          ball_velocity = sf.Vector2(ball_velocity.x, -abs(ball_velocity.y))
+    # Bricks collision test.
+    for brick_idx, brick in enumerate(bricks):
+      collision = test_rect_rect_collision(
+        ball_box, brick.global_bounds, ball_translation
+      )
+      if collision is not None:
+        collisions.append(collision)
 
-        break # No more tests.
+    # Choose nearest collision.
+    nearest_collision = None
+    nearest_distance = None
+
+    for collision in collisions:
+      distance = vector_length(collision.position - ball.position)
+
+      if nearest_collision is None or distance < nearest_distance:
+        nearest_collision = collision
+        nearest_distance = distance
+
+    # Collision response.
+    if nearest_collision is not None:
+      # Set ball position to collision position.
+      new_ball_position = nearest_collision.position
+
+      # Inverse velocity component.
+      if nearest_collision.side == "left" or nearest_collision.side == "right":
+        ball_velocity.x *= -1
+      elif (
+        nearest_collision.side == "top" or nearest_collision.side == "bottom"
+      ):
+        ball_velocity.y *= -1
 
     ball.position = new_ball_position
 
