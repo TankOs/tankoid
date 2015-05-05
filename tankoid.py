@@ -309,7 +309,7 @@ while run is True:
 
   if game_state == "die":
     window.draw(you_die_text)
-  elif game_state != "win":
+  elif game_state == "win":
     window.draw(you_win_text)
 
   window.display()
