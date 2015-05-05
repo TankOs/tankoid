@@ -20,7 +20,7 @@ CLEAR_COLOR = sf.Color(0, 128, 128)
 LEVEL_SIZE = sf.Vector2(10, 8)
 BALL_RADIUS = 10.0
 BALL_COLOR = sf.Color.WHITE
-BALL_SPEED = 800.0
+BALL_SPEED = 700.0
 FRAMERATE_LIMIT = 100
 
 Response = namedtuple("Response", ("position", "side"))
@@ -124,6 +124,22 @@ window = sf.RenderWindow(sf.VideoMode(1024, 768), "Tankoid (Python)", 0)
 window.framerate_limit = FRAMERATE_LIMIT
 run = True
 
+# Load fonts.
+gui_font = sf.Font.from_file(
+  "resources/fonts/orange_juice/orange juice 2.0.ttf"
+)
+
+# Prepare texts.
+you_die_text = sf.Text("You die and the universe collapses.", gui_font, 64)
+you_die_text.origin = you_die_text.global_bounds.size / 2
+you_die_text.position = (window.size.x / 2, window.size.y / 4 * 3)
+you_die_text.color = sf.Color.WHITE
+
+you_win_text = sf.Text("You win and get a CANDY MACHINE!", gui_font, 64)
+you_win_text.origin = you_win_text.global_bounds.size / 2
+you_win_text.position = (window.size.x / 2, window.size.y / 4 * 3)
+you_win_text.color = sf.Color.WHITE
+
 # Load bricks and center them.
 bricks = load_bricks(
   "resources/levels/0000.lvl", LEVEL_SIZE, BRICK_TYPES, BRICK_SIZE,
@@ -158,7 +174,6 @@ ball.fill_color = BALL_COLOR
 ball.position = paddle.position - sf.Vector2(0, paddle.size.y)
 
 ball_velocity = sf.Vector2(0, 0)
-ball_attached_to_paddle = True
 
 # Create border collision shapes.
 left_border = sf.Rectangle((-500, -500), (500, 1000 + window.size.y))
@@ -172,6 +187,8 @@ borders = (left_border, right_border, top_border, bottom_border)
 frame_timer = sf.Clock()
 app_timer = sf.Clock()
 
+game_state = "start"
+
 while run is True:
   for event in window.events:
     if type(event) is sf.KeyEvent:
@@ -179,8 +196,8 @@ while run is True:
         run = False
 
       elif event.code == sf.Keyboard.SPACE:
-        if ball_attached_to_paddle is True:
-          ball_attached_to_paddle = False
+        if game_state == "start":
+          game_state = "normal"
           ball_velocity = normalized_vector(sf.Vector2(1, -1)) * BALL_SPEED
 
       elif event.code == sf.Keyboard.NUM2:
@@ -192,21 +209,22 @@ while run is True:
   frametime = frame_timer.restart()
 
   # Paddle velocity.
-  move_left = (
-    sf.Keyboard.is_key_pressed(sf.Keyboard.LEFT) |
-    sf.Keyboard.is_key_pressed(sf.Keyboard.A)
-  )
-  move_right = (
-    sf.Keyboard.is_key_pressed(sf.Keyboard.RIGHT) |
-    sf.Keyboard.is_key_pressed(sf.Keyboard.D)
-  )
-  paddle_velocity = sf.Vector2((move_left and -1) + (move_right and 1), 0)
-  paddle_velocity *= PADDLE_SPEED
-  paddle.position += paddle_velocity * frametime.seconds
+  if game_state == "start" or game_state == "normal":
+    move_left = (
+      sf.Keyboard.is_key_pressed(sf.Keyboard.LEFT) |
+      sf.Keyboard.is_key_pressed(sf.Keyboard.A)
+    )
+    move_right = (
+      sf.Keyboard.is_key_pressed(sf.Keyboard.RIGHT) |
+      sf.Keyboard.is_key_pressed(sf.Keyboard.D)
+    )
+    paddle_velocity = sf.Vector2((move_left and -1) + (move_right and 1), 0)
+    paddle_velocity *= PADDLE_SPEED
+    paddle.position += paddle_velocity * frametime.seconds
 
-  if ball_attached_to_paddle is True:
+  if game_state == "start":
     ball.position = paddle.position - sf.Vector2(0, paddle.size.y)
-  else:
+  elif game_state == "normal":
     ball_translation = ball_velocity * frametime.seconds
     new_ball_position = ball.position + ball_translation
     collisions = []
@@ -264,9 +282,16 @@ while run is True:
       ):
         ball_velocity.y *= -1
 
-      # Remove brick if applicable.
+      # Brick hit, remove it.
       if obj in bricks:
         bricks.remove(obj)
+
+        if len(bricks) < 1:
+          game_state = "win"
+
+      # Bottom border hit, die. :-(
+      if obj is bottom_border:
+        game_state = "die"
 
     ball.position = new_ball_position
 
@@ -281,5 +306,10 @@ while run is True:
 
   window.draw(create_shadow(ball))
   window.draw(ball)
+
+  if game_state == "die":
+    window.draw(you_die_text)
+  elif game_state != "win":
+    window.draw(you_win_text)
 
   window.display()
