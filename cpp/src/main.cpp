@@ -3,23 +3,90 @@
 #include <SFML/Graphics.hpp>
 
 #include <iostream>
+#include <fstream>
+#include <exception>
 
 namespace sf {
   using Vector2ui = Vector2<unsigned int>;
 }
 
-static const sf::VideoMode VIDEO_MODE(1024, 768);
+static const sf::VideoMode VIDEO_MODE = {1024, 768};
 static const std::string WINDOW_TITLE = "Tankoid";
-static const sf::Color CLEAR_COLOR(0, 128, 128);
-static const sf::Vector2f BRICK_SIZE(50, 25);
-static const float BRICK_OUTLINE_THICKNESS(1.0f);
-static const float BRICK_GAP_WIDTH(12.0f);
-static const sf::Vector2ui LEVEL_SIZE(10, 8);
-static const sf::Vector2f PADDLE_SIZE(140, 30);
-static const sf::Color PADDLE_COLOR(sf::Color::White);
+static const sf::Color CLEAR_COLOR = {0, 128, 128};
+static const sf::Vector2f BRICK_SIZE = {50, 25};
+//static const float BRICK_OUTLINE_THICKNESS = 1.0f;
+static const float BRICK_GAP_WIDTH = 12.0f;
+static const sf::Vector2ui LEVEL_SIZE = {10, 8};
+static const sf::Vector2f PADDLE_SIZE = {140, 30};
+static const sf::Color PADDLE_COLOR = sf::Color::White;
 //static const float PADDLE_SPEED(750.0f);
 static const float BALL_RADIUS = 10.0f;
-static const sf::Color BALL_COLOR(sf::Color::White);
+static const sf::Color BALL_COLOR = sf::Color::White;
+static const std::vector<sf::Color> BRICK_TYPES = {
+  sf::Color::Red, sf::Color::Blue, sf::Color::Green, sf::Color::White
+};
+
+template <class T>
+T create_shadow(const T& shape, float distance=3.0f) {
+  T shadow(shape);
+  shadow.move({distance, distance});
+  shadow.setFillColor({0, 0, 0, 50});
+  return shadow;
+}
+
+std::vector<sf::RectangleShape> load_bricks(
+  const std::string& path, sf::Vector2ui level_size,
+  const std::vector<sf::Color>& brick_type_pool,
+  sf::Vector2f brick_size, float gap_width
+) {
+  std::ifstream in_stream(path.c_str());
+
+  if(!in_stream.good()) {
+    throw std::runtime_error("Failed opening bricks file: " + path);
+  }
+
+  std::string line;
+  std::size_t row_idx = 0;
+  std::vector<sf::RectangleShape> bricks;
+
+  while(std::getline(in_stream, line)) {
+    if(line.size() != level_size.x) {
+      throw std::runtime_error(
+        "Wrong column length in row " + std::to_string(row_idx + 1) + "."
+      );
+    }
+
+    std::size_t column_idx = 0;
+
+    for(; column_idx < level_size.x; ++column_idx) {
+      char ch = line[column_idx];
+
+      if(ch < '0' || ch > '9') {
+        throw std::runtime_error(std::string("Invalid character: ") + ch);
+      }
+
+      uint8_t brick_idx = static_cast<uint8_t>(ch - '0');
+
+      if(brick_idx >= brick_type_pool.size()) {
+        throw std::runtime_error(
+          "Brick index out of range: " + std::to_string(brick_idx)
+        );
+      }
+
+      sf::RectangleShape brick(brick_size);
+      brick.setPosition({
+          column_idx * (brick_size.x + gap_width),
+          row_idx * (brick_size.y + gap_width),
+      });
+      brick.setFillColor(brick_type_pool[brick_idx]);
+      bricks.push_back(brick);
+    }
+
+    ++row_idx;
+  }
+
+  return bricks;
+}
 
 int main() {
   std::cout << "Resources path: " << RESOURCES_PATH << std::endl;
@@ -31,8 +98,12 @@ int main() {
   sf::Event event;
 
   // Setup bricks.
-  std::vector<sf::RectangleShape> bricks;
+  auto bricks = load_bricks(
+    RESOURCES_PATH + "/levels/0000.lvl", LEVEL_SIZE, BRICK_TYPES, BRICK_SIZE,
+    BRICK_GAP_WIDTH
+  );
 
+  /*
   {
     sf::RectangleShape shape(BRICK_SIZE);
     shape.setFillColor({255, 0, 0});
@@ -50,6 +121,23 @@ int main() {
         });
         bricks.push_back(shape);
       }
+    }
+  }
+  */
+
+  // Center bricks.
+  {
+    sf::Vector2f shift(
+      (
+        window.getSize().x / 2 -
+        LEVEL_SIZE.x / 2 * (BRICK_SIZE.x + BRICK_GAP_WIDTH) +
+        BRICK_GAP_WIDTH / 2
+      ),
+      50
+    );
+
+    for(auto& brick : bricks) {
+      brick.move(shift);
     }
   }
 
@@ -81,10 +169,13 @@ int main() {
     window.clear(CLEAR_COLOR);
 
     for(const auto& brick : bricks) {
+      window.draw(create_shadow(brick));
       window.draw(brick);
     }
 
+    window.draw(create_shadow(paddle));
     window.draw(paddle);
+    window.draw(create_shadow(ball));
     window.draw(ball);
 
     window.display();
