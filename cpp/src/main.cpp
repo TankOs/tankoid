@@ -10,6 +10,10 @@ namespace sf {
   using Vector2ui = Vector2<unsigned int>;
 }
 
+enum class GameState {
+  START=0, NORMAL, DIE, WIN
+};
+
 static const sf::VideoMode VIDEO_MODE = {1024, 768};
 static const std::string WINDOW_TITLE = "Tankoid";
 static const sf::Color CLEAR_COLOR = {0, 128, 128};
@@ -19,7 +23,7 @@ static const float BRICK_GAP_WIDTH = 12.0f;
 static const sf::Vector2ui LEVEL_SIZE = {10, 8};
 static const sf::Vector2f PADDLE_SIZE = {140, 30};
 static const sf::Color PADDLE_COLOR = sf::Color::White;
-//static const float PADDLE_SPEED(750.0f);
+static const float PADDLE_SPEED(750.0f);
 static const float BALL_RADIUS = 10.0f;
 static const sf::Color BALL_COLOR = sf::Color::White;
 static const std::vector<sf::Color> BRICK_TYPES = {
@@ -103,28 +107,6 @@ int main() {
     BRICK_GAP_WIDTH
   );
 
-  /*
-  {
-    sf::RectangleShape shape(BRICK_SIZE);
-    shape.setFillColor({255, 0, 0});
-    shape.setOutlineThickness(BRICK_OUTLINE_THICKNESS);
-
-    sf::Color outline_color(shape.getFillColor());
-    outline_color.a = 80;
-    shape.setOutlineColor(outline_color);
-
-    for(unsigned int y = 0; y < LEVEL_SIZE.y; ++y) {
-      for(unsigned int x = 0; x < LEVEL_SIZE.x; ++x) {
-        shape.setPosition({
-            x * (BRICK_SIZE.x + BRICK_GAP_WIDTH),
-            y * (BRICK_SIZE.y + BRICK_GAP_WIDTH),
-        });
-        bricks.push_back(shape);
-      }
-    }
-  }
-  */
-
   // Center bricks.
   {
     sf::Vector2f shift(
@@ -159,11 +141,49 @@ int main() {
   ball.setFillColor(BALL_COLOR);
   ball.setPosition(paddle.getPosition() - sf::Vector2f(0, paddle.getSize().y));
 
+  sf::Clock frame_clock;
+  auto game_state = GameState::START;
+
   while(run) {
     while(window.pollEvent(event)) {
       if(event.type == sf::Event::KeyPressed) {
-        run = false;
+        if(event.key.code == sf::Keyboard::Escape) {
+          run = false;
+        }
+        else if(event.key.code == sf::Keyboard::Space) {
+          if(game_state == GameState::START) {
+            game_state = GameState::NORMAL;
+            std::cout << "-> Normal" << std::endl;
+          }
+        }
       }
+    }
+
+    auto frame_time = frame_clock.restart();
+    auto frame_seconds = frame_time.asSeconds();
+
+    if(game_state == GameState::START || game_state == GameState::NORMAL) {
+      bool move_left = (
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Left) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::A)
+      );
+      bool move_right = (
+        sf::Keyboard::isKeyPressed(sf::Keyboard::Right) ||
+        sf::Keyboard::isKeyPressed(sf::Keyboard::D)
+      );
+      sf::Vector2f paddle_velocity = {
+        (move_left ? -1.0f : 0.0f) + (move_right ? 1.0f : 0.0f),
+        0.0f
+      };
+
+      paddle.move(paddle_velocity * PADDLE_SPEED * frame_seconds);
+    }
+
+    if(game_state == GameState::START) {
+      // Make the ball follow the paddle.
+      ball.setPosition(
+        paddle.getPosition() - sf::Vector2f(0, paddle.getSize().y)
+      );
     }
 
     window.clear(CLEAR_COLOR);
