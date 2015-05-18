@@ -15,6 +15,27 @@ enum class GameState {
   START=0, NORMAL, DIE, WIN
 };
 
+struct CollisionResult {
+  enum class Side {
+    NONE, LEFT, RIGHT, BOTTOM, TOP
+  };
+
+  sf::Vector2f position = {0.0f, 0.0f};
+  Side side = Side::NONE;
+};
+
+struct CollisionInfo {
+  CollisionInfo(
+    CollisionResult result_, const sf::RectangleShape* brick_=nullptr
+  ) :
+     brick(brick_), result(result_)
+  {
+  }
+
+  const sf::RectangleShape* brick;
+  CollisionResult result;
+};
+
 static const sf::VideoMode VIDEO_MODE = {1024, 768};
 static const std::string WINDOW_TITLE = "Tankoid";
 static const sf::Color CLEAR_COLOR = {0, 128, 128};
@@ -33,8 +54,18 @@ static const std::vector<sf::Color> BRICK_TYPES = {
 };
 
 template <class T>
-sf::Vector2<T> create_normalized_vector(const sf::Vector2<T>& source) {
-  return source / std::sqrt(source.x * source.x + source.y + source.y);
+constexpr T vector_length(const sf::Vector2<T>& vector) {
+  return std::sqrt(vector.x * vector.x + vector.y + vector.y);
+}
+
+template <class T>
+constexpr int sgn(T value) {
+    return (T(0) < value) - (value < T(0));
+}
+
+template <class T>
+sf::Vector2<T> normalized_vector(const sf::Vector2<T>& source) {
+  return source / vector_length(source);
 }
 
 template <class T>
@@ -99,6 +130,66 @@ std::vector<sf::RectangleShape> load_bricks(
   return bricks;
 }
 
+CollisionResult test_rect_rect_collision(
+  const sf::FloatRect& source, const sf::FloatRect& target,
+  const sf::Vector2f& translation
+) {
+  CollisionResult result;
+
+  auto translated_rect = sf::FloatRect(
+    source.left + translation.x, source.top + translation.y,
+    source.width, source.height
+  );
+  sf::FloatRect intersection = {0.0f, 0.0f, 0.0f, 0.0f};
+
+  auto intersects = translated_rect.intersects(target, intersection);
+
+  if(intersects) {
+    auto translation_normal = normalized_vector(translation);
+    auto source_center = sf::Vector2f(
+      source.left + source.width / 2,
+      source.top + source.height / 2
+    );
+
+    if(intersection.width < intersection.height) {
+      // Left or right collision.
+      sf::Vector2f pullback_vector = {
+        intersection.width * sgn(translation_normal.x),
+        (
+          (intersection.width * sgn(translation_normal.y)) *
+          (translation_normal.x / translation_normal.y)
+        )
+      };
+      result.position = source_center + (translation - pullback_vector);
+
+      using CollisionResult::Side::RIGHT;
+      using CollisionResult::Side::LEFT;
+      result.side = translation.x < 0.0f ? RIGHT : LEFT;
+    }
+    else {
+      // Top or bottom collision.
+      sf::Vector2f pullback_vector = {
+        (
+          (intersection.height * sgn(translation_normal.x)) *
+          (translation_normal.y / translation_normal.x)
+        ),
+        intersection.height * sgn(translation_normal.y)
+      };
+      result.position = source_center + (translation - pullback_vector);
+
+      using CollisionResult::Side::TOP;
+      using CollisionResult::Side::BOTTOM;
+      result.side = translation.y < 0.0f ? BOTTOM : TOP;
+    }
+  }
+  else {
+    result.side = CollisionResult::Side::NONE;
+    result.position = {source.left, source.top};
+  }
+
+  return std::move(result);
+}
+
 int main() {
   std::cout << "Resources path: " << RESOURCES_PATH << std::endl;
 
@@ -152,6 +243,26 @@ int main() {
   auto game_state = GameState::START;
   sf::Vector2f ball_velocity = {0.0f, 0.0f};
 
+  // Borders.
+  std::vector<sf::FloatRect> borders;
+
+  borders.emplace_back( // Left.
+    -500, 0,
+    500, window.getSize().y
+  );
+  borders.emplace_back( // Right.
+    window.getSize().x, 0,
+    500, window.getSize().y
+  );
+  borders.emplace_back( // Top.
+    0, -500,
+    window.getSize().x, 500
+  );
+  borders.emplace_back( // Bottom.
+    0, window.getSize().y,
+    window.getSize().x, 500
+  );
+
   while(run) {
     while(window.pollEvent(event)) {
       if(event.type == sf::Event::KeyPressed) {
@@ -195,8 +306,91 @@ int main() {
       );
     }
     else if(game_state == GameState::NORMAL) {
+      using Side = CollisionResult::Side;
+
       sf::Vector2f ball_translation = ball_velocity * frame_seconds;
       sf::Vector2f new_position = ball.getPosition() + ball_translation;
+      std::vector<CollisionInfo> collisions;
+
+      // Paddle collision test.
+      {
+        auto collision = test_rect_rect_collision(
+          ball.getGlobalBounds(), paddle.getGlobalBounds(), ball_translation
+        );
+
+        if(collision.side != Side::NONE) {
+          collisions.emplace_back(collision);
+        }
+      }
+
+      // Border collision test.
+      for(const auto& border : borders) {
+        auto collision = test_rect_rect_collision(
+          ball.getGlobalBounds(), border, ball_translation
+        );
+
+        if(collision.side != Side::NONE) {
+          collisions.emplace_back(collision);
+        }
+      }
+
+      // Bricks collision tests.
+      for(const auto& brick : bricks) {
+        auto collision = test_rect_rect_collision(
+          ball.getGlobalBounds(), brick.getGlobalBounds(), ball_translation
+        );
+
+        if(collision.side != Side::NONE) {
+          collisions.emplace_back(collision, &brick);
+        }
+      }
+
+      // Choose nearest collision.
+      const CollisionInfo* nearest_collision = nullptr;
+      float nearest_distance = 0.0f;
+
+      for(const auto& collision : collisions) {
+        auto distance = vector_length(
+          collision.result.position - ball.getPosition()
+        );
+
+        if(!nearest_collision || distance < nearest_distance) {
+          nearest_distance = distance;
+          nearest_collision = &collision;
+        }
+      }
+
+      // Collision response.
+      if(nearest_collision) {
+        new_position = nearest_collision->result.position;
+
+        // Inverse velocity.
+        if(
+          nearest_collision->result.side == Side::LEFT ||
+          nearest_collision->result.side == Side::RIGHT
+        ) {
+          ball_velocity.x *= -1;
+        }
+        else if(
+          nearest_collision->result.side == Side::TOP ||
+          nearest_collision->result.side == Side::BOTTOM
+        ) {
+          ball_velocity.y *= -1;
+        }
+
+        // Remove brick.
+        if(nearest_collision->brick) {
+          for(std::size_t idx = 0; idx < bricks.size(); ++idx) {
+            if(&bricks[idx] == nearest_collision->brick) {
+              bricks.erase(
+                std::begin(bricks) +
+                static_cast<decltype(bricks)::difference_type>(idx)
+              );
+              break;
+            }
+          }
+        }
+      }
 
       ball.setPosition(new_position);
     }
