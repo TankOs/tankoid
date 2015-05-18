@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <exception>
+#include <cmath>
 
 namespace sf {
   using Vector2ui = Vector2<unsigned int>;
@@ -26,9 +27,15 @@ static const sf::Color PADDLE_COLOR = sf::Color::White;
 static const float PADDLE_SPEED(750.0f);
 static const float BALL_RADIUS = 10.0f;
 static const sf::Color BALL_COLOR = sf::Color::White;
+static const float BALL_SPEED = 700.0;
 static const std::vector<sf::Color> BRICK_TYPES = {
   sf::Color::Red, sf::Color::Blue, sf::Color::Green, sf::Color::White
 };
+
+template <class T>
+sf::Vector2<T> create_normalized_vector(const sf::Vector2<T>& source) {
+  return source / std::sqrt(source.x * source.x + source.y + source.y);
+}
 
 template <class T>
 T create_shadow(const T& shape, float distance=3.0f) {
@@ -143,6 +150,7 @@ int main() {
 
   sf::Clock frame_clock;
   auto game_state = GameState::START;
+  sf::Vector2f ball_velocity = {0.0f, 0.0f};
 
   while(run) {
     while(window.pollEvent(event)) {
@@ -153,7 +161,7 @@ int main() {
         else if(event.key.code == sf::Keyboard::Space) {
           if(game_state == GameState::START) {
             game_state = GameState::NORMAL;
-            std::cout << "-> Normal" << std::endl;
+            ball_velocity = sf::Vector2f(0.5f, -0.5f) * BALL_SPEED;
           }
         }
       }
@@ -163,6 +171,7 @@ int main() {
     auto frame_seconds = frame_time.asSeconds();
 
     if(game_state == GameState::START || game_state == GameState::NORMAL) {
+      // Paddle movement.
       bool move_left = (
         sf::Keyboard::isKeyPressed(sf::Keyboard::Left) ||
         sf::Keyboard::isKeyPressed(sf::Keyboard::A)
@@ -184,6 +193,12 @@ int main() {
       ball.setPosition(
         paddle.getPosition() - sf::Vector2f(0, paddle.getSize().y)
       );
+    }
+    else if(game_state == GameState::NORMAL) {
+      sf::Vector2f ball_translation = ball_velocity * frame_seconds;
+      sf::Vector2f new_position = ball.getPosition() + ball_translation;
+
+      ball.setPosition(new_position);
     }
 
     window.clear(CLEAR_COLOR);
